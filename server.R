@@ -1,3 +1,6 @@
+#Data Butler by Andrew Dumit is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License.
+#Based on a work at https://github.com/adumit/Data_Butler.
+
 library(shiny)
 library(stringr)
 library(ggplot2)
