@@ -24,6 +24,10 @@ dashboardPage(
     )
   ),
   dashboardBody(
+#     tags$style(type="text/css",
+#                ".shiny-output-error { visibility: hidden; }",
+#                ".shiny-output-error:before { visibility: hidden; }"
+#     ),
     includeScript("www/javascript.js"),
     tabItems(
       tabItem(tabName = "dataUpload",
@@ -65,14 +69,27 @@ dashboardPage(
                        box(width=12,
                            fluidRow(
                              column(width=6,
-                                    uiOutput("dataset1")),
+                                    uiOutput("dataset1"),
+                                    textOutput("numObs1"),
+                                    br()),
                              column(width=6,
-                                    uiOutput("dataset2"))
+                                    uiOutput("dataset2"),
+                                    textOutput("numObs2"),
+                                    br())
                            ),
                            fluidRow(
                              column(width = 12,
                                     textInput("newDataName", "Name for New Dataset:"),
-                                    actionButton("mergeEm", "Merge!")
+                                    selectizeInput("typeJoin", "Choose how to merge your data:",
+                                                   choices = c("Keep all rows from dataset 1 only" = "left",
+                                                               "Keep all rows from dataset 2 only" = "right",
+                                                               "Keep only rows with matching columns in both datasets" = "inner",
+                                                               "Keep all rows from both datasets" = "full")),
+                                    radioButtons("match", "Keep duplicates or only match the first occurance of the merge variable:",
+                                                 choices = c("Keep duplicates" = "all",
+                                                             "Don't keep duplicates" = "first"),
+                                                 inline = T),
+                                    actionButton("mergeEm", "Merge!", class="center-block")
                              )
                            )
                         )
@@ -121,7 +138,22 @@ dashboardPage(
                                 )
                          ),
                        tabPanel("Advanced Examination",
-                                helpText("Currently under construction"))
+                                fluidRow(
+                                  column(width=3,
+                                         box(width=12,
+                                             uiOutput("selectizeAdvExam")
+                                         )),
+                                  column(width=9,
+                                         box(width=12,
+                                             column(width=4,
+                                                    verbatimTextOutput("advExam1")),
+                                             column(width=4,
+                                                    verbatimTextOutput("advExam2")),
+                                             column(width=4,
+                                                    verbatimTextOutput("advExam3"))
+                                         )
+                                  )
+                                ))
                        )
               )        
       ),
@@ -170,12 +202,16 @@ dashboardPage(
                                   ),
                                   uiOutput("yAxisSelect"),
                                   actionButton("createPlot", "Create Plot"),
+                                  div(style="visibility:hidden",
+                                      box(width=12,
+                                          height = 30)
+                                  ),
                                   div(class="span12",
                                       textInput("plotName", "Name of saved plot:"),
                                       downloadButton('downloadPlot', 'Save Plot as PDF')),
                                   div(style="visibility:hidden",
                                       box(width=12,
-                                          height = 212)
+                                          height = 54)
                                   ),
                                   box(width = 12,
                                       selectizeInput("graphOptions", "Graphing Options to Change:",
@@ -230,7 +266,10 @@ dashboardPage(
                                                uiOutput("scatterPlotOptions"),
                                                uiOutput("barPlotOptions"))
                                     )
-                                  )
+                                  ),
+                                  div(style="visibility:hidden",
+                                      box(width=12,
+                                          height = 200))
                            )),
                   tabPanel("Live ggplot",
                            fluidRow(
@@ -250,19 +289,54 @@ dashboardPage(
               fluidRow(
                 tabBox(width = 12,
                        tabPanel("Linear Regression",
+                                 fluidRow(
+                                   tabBox(width = 12,
+                                     tabPanel("Build Your Model",
+                                              fluidRow(
+                                                column(width = 4,
+                                                       uiOutput("linReg"),
+                                                       actionButton("buildModelLinReg", "Build Model")),
+                                                column(width = 8,
+                                                       verbatimTextOutput("linRegModelOutput")
+                                                )
+                                              )
+                                     ),
+                                     tabPanel("Auto-Select Variables",
+                                              fluidRow(
+                                                column(width = 4,
+                                                       uiOutput("linReg2"),
+                                                       actionButton("buildModelLinReg2", "Select Variable Subset")),
+                                                column(width = 8,
+                                                       plotOutput("varImporatance1"),
+                                                       uiOutput("linRegVarSelection1")
+                                                )
+                                              )
+                                      ),
+                                     tabPanel("Test for Variable Interaction",
+                                              fluidRow(
+                                                column(width = 4,
+                                                       uiOutput("linReg3"),
+                                                       actionButton("buildModelLinReg3", "Test Variable Interaction")),
+                                                column(width = 8,
+                                                       plotOutput("varImporatance2"),
+                                                       uiOutput("linRegVarInteraction")
+                                                )
+                                              )
+                                      )
+                                   )
+                                 )
+                                ),
+                       tabPanel("Logistic Regression",
                                 fluidRow(
                                   box(width=12,
                                       column(width = 4,
-                                             uiOutput("linReg"),
-                                             actionButton("buildModelLinReg", "Build Model")),
+                                             uiOutput("logReg"),
+                                             actionButton("buildModelLogReg", "Build Model")),
                                       column(width = 8,
-                                             verbatimTextOutput("modelOutput")
+                                             verbatimTextOutput("logRegModelOutput")
                                       )
                                   )
-                                )
-                        ),
-                       tabPanel("Logistic Regression",
-                                helpText("Currently under construction")),
+                                )),
                        tabPanel("Random Forest",
                                 helpText("Currently under construction")),
                        tabPanel("Support Vector Machine",
@@ -272,7 +346,15 @@ dashboardPage(
                        tabPanel("K-Nearest Neighbor",
                                 helpText("Currently under construction")),
                        tabPanel("K-Means Clustering",
-                                helpText("Currently under construction"))
+                                fluidRow(
+                                  box(width = 12,
+                                      column(width = 4,
+                                             uiOutput("kmeansChoice"),
+                                             uiOutput("kmeans")),
+                                      column(width = 8,
+                                             uiOutput("kmeansOutput"))
+                                  )
+                                ))
                 )
               )),
       tabItem(tabName = "dataDownload",

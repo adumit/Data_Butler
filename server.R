@@ -1,9 +1,10 @@
 library(shiny)
 library(stringr)
 library(ggplot2)
+library(plyr)
+library(fpc)
+library(leaps)
 options(shiny.maxRequestSize=300*1024^2)
-
-
 
 shinyServer(function(input, output) {
   dataEdited <<- FALSE
@@ -91,8 +92,7 @@ shinyServer(function(input, output) {
       return(NULL)
     }
     else {
-      dat <<- datList[[as.character(input$currentDat)]]
-      return(dat)
+      return(datList[[as.character(input$currentDat)]])
     }
   })
   
@@ -117,9 +117,10 @@ shinyServer(function(input, output) {
     if (!is.null(input$df1)) {
       div(class="span12",
           selectizeInput("cols1", "Columns to keep from first dataset:",
-                         choices = names(getData1()), multiple = T),
+                         choices = c("All", names(getData1())), multiple = T),
           selectInput("by1", "Choose the variable to merge this dataset by:",
-                      choices = names(getData1())))
+                      choices = names(getData1()), multiple = T)
+      )
     }
   })
   output$dataset2 <- renderUI ({
@@ -132,11 +133,23 @@ shinyServer(function(input, output) {
   output$col2 <- renderUI ({
     if (!is.null(input$df2)) {
       div(class="span12",
-          selectizeInput("cols2", "Columns to keep from first dataset:",
-                         choices = names(getData2()), multiple = T),
+          selectizeInput("cols2", "Columns to keep from second dataset:",
+                         choices = c("All", names(getData2())), multiple = T),
           selectInput("by2", "Choose the variable to merge this dataset by:",
-                      choices = names(getData2()))
+                      choices = names(getData2()), multiple = T)
       )
+    }
+  })
+  output$numObs1 <- renderText({
+    if (!is.null(input$by1)) {
+      paste("There are",length(unique(getData1()[[as.character(input$by1)]])), "unique values and",
+            dim(getData1())[1], "total observations of the merge variable for this dataset")
+    }
+  })
+  output$numObs2 <- renderText({
+    if (!is.null(input$by2)) {
+      paste("There are",length(unique(getData2()[[as.character(input$by2)]])), "unique values and",
+            dim(getData2())[1], "total observations of the merge variable for this dataset")
     }
   })
   
@@ -148,9 +161,20 @@ shinyServer(function(input, output) {
       newList <- datList
       dat1 <- getData1()
       dat2 <- getData2()
-      dat1Sub <- subset(dat1, select = c(input$cols1, input$by1))
-      dat2Sub <- subset(dat2, select = c(input$cols2, input$by2))
-      datFinal <- merge(dat1Sub, dat2Sub, by.x = input$by1, by.y = input$by2)
+      if ("All" %in% input$cols1) {
+        dat1Sub <- dat1 #Don't change dat1
+      } else {
+        dat1Sub <- subset(dat1, select = c(input$cols1, input$by1)) #Select requested columns
+      }
+      if ("All" %in% input$cols2) {
+        dat2Sub <- dat2 #Leave dat2 alone
+      } else {
+        dat2Sub <- subset(dat2, select = c(input$cols2, input$by2)) #Select requested columns
+      }
+      dat1Sub[[as.character(input$by1)]] <- as.character(dat1Sub[[as.character(input$by1)]])
+      dat2Sub[[as.character(input$by2)]] <- as.character(dat2Sub[[as.character(input$by2)]])
+      datFinal <- join(dat1Sub, dat2Sub, by = c(as.character(input$by1), as.character(input$by2)),
+                         type = as.character(input$typeJoin), match = as.character(input$match))
       newList[[as.character(input$newDataName)]] <- datFinal
       datList <<- newList
       return(datList)
@@ -408,40 +432,41 @@ shinyServer(function(input, output) {
     output$dataAfterEditing <- renderPrint({
       j <- input$editOptions[1]
       i <- input$variableForEditing[1]
+      dat <- datList[[as.character(input$currentDat)]]
       if (j == "Remove NAs") {
-        dat <- dat[!is.na(dat[toString(i)]),]
+        dat <- datList[[as.character(input$currentDat)]][!is.na(datList[[as.character(input$currentDat)]][toString(i)]),]
       }
       else if (j == "Center Variable") {
-        dat[[toString(i)]] <- dat[[toString(i)]] - mean(dat[[toString(i)]], na.rm = T)
+        dat[,as.character(i)] <- datList[[as.character(input$currentDat)]][,as.character(i)] - mean(datList[[as.character(input$currentDat)]][,as.character(i)], na.rm = T)
       }
       else if (j == "Scale Variable") {
-        dat[[toString(i)]] <- dat[[toString(i)]]/sd(dat[[toString(i)]], na.rm = T)
+        dat[,as.character(i)] <- datList[[as.character(input$currentDat)]][,as.character(i)]/sd(datList[[as.character(input$currentDat)]][,as.character(i)], na.rm = T)
       }
       else if (j == "Convert Variable Type") {
         if (input$convertVarTo == "Character") {
-          dat[[as.character(i)]] <- as.character(dat[[as.character(i)]])
+          dat[,as.character(i)] <- as.character(datList[[as.character(input$currentDat)]][,as.character(i)])
         }
         else if (input$convertVarTo == "Integer") {
-          dat[[as.character(i)]] <- as.integer(dat[[as.character(i)]])
+          dat[,as.character(i)] <- as.integer(datList[[as.character(input$currentDat)]][,as.character(i)])
         }
         else if (input$convertVarTo == "Numeric") {
-          dat[[as.character(i)]] <- as.numeric(dat[[as.character(i)]])
+          dat[,as.character(i)] <- as.numeric(datList[[as.character(input$currentDat)]][,as.character(i)])
         }
         else if (input$convertVarTo == "Factor") {
-          dat[[as.character(i)]] <- as.factor(dat[[as.character(i)]])
+          dat[,as.character(i)] <- as.factor(datList[[as.character(input$currentDat)]][,as.character(i)])
         }
       }
       else if (j == "Change to Lowercase") {
-        if (typeof(dat[[toString(i)]][1]) == "character") {
-          dat[[toString(i)]] <- tolower(dat[[toString(i)]])
+        if (typeof(dat[,as.character(i)][1]) == "character") {
+          dat[,as.character(i)] <- tolower(datList[[as.character(input$currentDat)]][,as.character(i)])
         }
         else {
           #Do nothing
         }
       }
       else if (j == "Change to Uppercase") {
-        if (typeof(dat[[toString(i)]][1]) == "character") {
-          dat[[toString(i)]] <- toupper(dat[[toString(i)]])
+        if (typeof(dat[,as.character(i)][1]) == "character") {
+          dat[,as.character(i)] <- toupper(datList[[as.character(input$currentDat)]][,as.character(i)])
         }
         else {
           #Do nothing
@@ -450,104 +475,104 @@ shinyServer(function(input, output) {
       else if (j == "Make an Imputation") {
         if (input$whatToChange == "NA") {
           if (input$selectizeAdvancedImputation == "Impute the mean") {
-            dat[[as.character(i)]][is.na(dat[[as.character(i)]])] <- mean(dat[[as.character(i)]], na.rm = T)
+            dat[is.na(datList[[as.character(input$currentDat)]][,as.character(i)])] <- mean(datList[[as.character(input$currentDat)]][,as.character(i)], na.rm = T)
           }
           else if (input$selectizeAdvancedImputation == "Impute the median") {
-            dat[[as.character(i)]][is.na(dat[[as.character(i)]])] <- median(dat[[as.character(i)]], na.rm = T)
+            dat[is.na(datList[[as.character(input$currentDat)]][,as.character(i)])] <- median(datList[[as.character(input$currentDat)]][,as.character(i)], na.rm = T)
           }
           else if (input$fromType == "Numeric") {
-            dat[[as.character(i)]][is.na(dat[[as.character(i)]])] <- as.numeric(input$changeTo)
+            dat[is.na(datList[[as.character(input$currentDat)]][,as.character(i)])] <- as.numeric(input$changeTo)
           }
           else if (input$fromType == "Character") {
-            dat[[as.character(i)]][is.na(dat[[as.character(i)]])] <- as.character(input$changeTo)
+            dat[is.na(datList[[as.character(input$currentDat)]][,as.character(i)])] <- as.character(input$changeTo)
           }
           else if (input$fromType == "Integer") {
-            dat[[as.character(i)]][is.na(dat[[as.character(i)]])] <- as.integer(input$changeTo)
+            dat[is.na(datList[[as.character(input$currentDat)]][,as.character(i)])] <- as.integer(input$changeTo)
           }
         }
         else if (input$selectizeAdvancedImputation == "Impute the mean") {
-          dat[[as.character(i)]][dat[[as.character(i)]] == as.integer(input$whatToChange)] <- mean(dat[[as.character(i)]], na.rm = T)
+          dat[datList[[as.character(input$currentDat)]][,as.character(i)] == as.integer(input$whatToChange)] <- mean(datList[[as.character(input$currentDat)]][,as.character(i)], na.rm = T)
         }
         else if (input$selectizeAdvancedImputation == "Impute the median") {
-          dat[[as.character(i)]][dat[[as.character(i)]] == as.integer(input$whatToChange)] <- median(dat[[as.character(i)]], na.rm = T)
+          dat[datList[[as.character(input$currentDat)]][,as.character(i)] == as.integer(input$whatToChange)] <- median(datList[[as.character(input$currentDat)]][,as.character(i)], na.rm = T)
         }
         else if (input$fromType == "Numeric") {
-          dat[[as.character(i)]][dat[[as.character(i)]] == as.numeric(input$whatToChange)] <- as.numeric(input$changeTo)
+          dat[datList[[as.character(input$currentDat)]][,as.character(i)] == as.numeric(input$whatToChange)] <- as.numeric(input$changeTo)
         }
         else if (input$fromType == "Character") {
-          dat[[as.character(i)]][dat[[as.character(i)]] == as.character(input$whatToChange)] <- as.character(input$changeTo)
+          dat[datList[[as.character(input$currentDat)]][,as.character(i)] == as.character(input$whatToChange)] <- as.character(input$changeTo)
         }
         else if (input$fromType == "Integer") {
-          dat[[as.character(i)]][dat[[as.character(i)]] == as.integer(input$whatToChange)] <- as.integer(input$changeTo)
+          dat[datList[[as.character(input$currentDat)]][,as.character(i)] == as.integer(input$whatToChange)] <- as.integer(input$changeTo)
         }
       }
       else if (j == "Subset Data") {
         if (input$howToSubset == "Equal to") {
           if (input$varType == "Character") {
-            dat <- subset(dat, dat[[as.character(i)]] == as.character(input$valueToSubsetOn))
+            dat <- subset(dat, datList[[as.character(input$currentDat)]][,as.character(i)] == as.character(input$valueToSubsetOn))
           }
           else if (input$varType == "Numeric") {
-            dat <- subset(dat, dat[[as.character(i)]] == as.numeric(input$valueToSubsetOn))
+            dat <- subset(dat, datList[[as.character(input$currentDat)]][,as.character(i)] == as.numeric(input$valueToSubsetOn))
           }
           else if (input$varType == "Integer") {
-            dat <- subset(dat, dat[[as.character(i)]] == as.integer(input$valueToSubsetOn))
+            dat <- subset(dat, datList[[as.character(input$currentDat)]][,as.character(i)] == as.integer(input$valueToSubsetOn))
           }
         }
         else if (input$howToSubset == "Greater than") {
           if (input$varType == "Character") {
-            dat <- subset(dat, dat[[as.character(i)]] > as.character(input$valueToSubsetOn))
+            dat <- subset(dat, datList[[as.character(input$currentDat)]][,as.character(i)] > as.character(input$valueToSubsetOn))
           }
           else if (input$varType == "Numeric") {
-            dat <- subset(dat, dat[[as.character(i)]] > as.numeric(input$valueToSubsetOn))
+            dat <- subset(dat, datList[[as.character(input$currentDat)]][,as.character(i)] > as.numeric(input$valueToSubsetOn))
           }
           else if (input$varType == "Integer") {
-            dat <- subset(dat, dat[[as.character(i)]] > as.integer(input$valueToSubsetOn))
+            dat <- subset(dat, datList[[as.character(input$currentDat)]][,as.character(i)] > as.integer(input$valueToSubsetOn))
           }
         }
         else if (input$howToSubset == "Less than") {
           if (input$varType == "Character") {
-            dat <- subset(dat, dat[[as.character(i)]] < as.character(input$valueToSubsetOn))
+            dat <- subset(dat, datList[[as.character(input$currentDat)]][,as.character(i)] < as.character(input$valueToSubsetOn))
           }
           else if (input$varType == "Numeric") {
-            dat <- subset(dat, dat[[as.character(i)]] < as.numeric(input$valueToSubsetOn))
+            dat <- subset(dat, datList[[as.character(input$currentDat)]][,as.character(i)] < as.numeric(input$valueToSubsetOn))
           }
           else if (input$varType == "Integer") {
-            dat <- subset(dat, dat[[as.character(i)]] < as.integer(input$valueToSubsetOn))
+            dat <- subset(dat, datList[[as.character(input$currentDat)]][,as.character(i)] < as.integer(input$valueToSubsetOn))
           }
         }
         else if (input$howToSubset == "Between") {
           if (input$varType == "Character") {
-            dat <- subset(dat, dat[[as.character(i)]] < as.character(input$secondVal) & dat[[as.character(i)]] > as.character(input$firstVal))
+            dat <- subset(dat, datList[[as.character(input$currentDat)]][,as.character(i)] < as.character(input$secondVal) & datList[[as.character(input$currentDat)]][,as.character(i)] > as.character(input$firstVal))
           }
           else if (input$varType == "Numeric") {
-            dat <- subset(dat, dat[[as.character(i)]] < as.numeric(input$secondVal) & dat[[as.character(i)]] > as.numeric(input$firstVal))
+            dat <- subset(dat, datList[[as.character(input$currentDat)]][,as.character(i)] < as.numeric(input$secondVal) & datList[[as.character(input$currentDat)]][,as.character(i)] > as.numeric(input$firstVal))
           }
           else if (input$varType == "Integer") {
-            dat <- subset(dat, dat[[as.character(i)]] < as.integer(input$secondVal) & dat[[as.character(i)]] > as.integer(input$firstVal))
+            dat <- subset(dat, datList[[as.character(input$currentDat)]][,as.character(i)] < as.integer(input$secondVal) & datList[[as.character(input$currentDat)]][,as.character(i)] > as.integer(input$firstVal))
           }
         }
         else if (input$howToSubset == "Not equal to") {
           if (input$varType == "Character") {
-            dat <- subset(dat, dat[[as.character(i)]] != as.character(input$valueToSubsetOn))
+            dat <- subset(dat, datList[[as.character(input$currentDat)]][,as.character(i)] != as.character(input$valueToSubsetOn))
           }
           else if (input$varType == "Numeric") {
-            dat <- subset(dat, dat[[as.character(i)]] != as.numeric(input$valueToSubsetOn))
+            dat <- subset(dat, datList[[as.character(input$currentDat)]][,as.character(i)] != as.numeric(input$valueToSubsetOn))
           }
           else if (input$varType == "Integer") {
-            dat <- subset(dat, dat[[as.character(i)]] != as.integer(input$valueToSubsetOn))
+            dat <- subset(dat, datList[[as.character(input$currentDat)]][,as.character(i)] != as.integer(input$valueToSubsetOn))
           }
         }
       }
       else if (j == "Create a Variable") {
         if (input$howToCreate == "Add two variables") {
           if (input$typeOfNewVar == "Numeric") {
-            dat[[input$newVarName]] <- as.numeric(dat[[input$firstVar]]) + as.numeric(dat[[input$secondVar]])
+            dat[[input$newVarName]] <- as.numeric(datList[[as.character(input$currentDat)]][[input$firstVar]]) + as.numeric(datList[[as.character(input$currentDat)]][[input$secondVar]])
           }
           else if (input$typeOfNewVar == "Character") {
-            dat[[input$newVarName]] <- paste0((dat[[input$firstVar]]), (dat[[input$secondVar]]))
+            dat[[input$newVarName]] <- paste0((datList[[as.character(input$currentDat)]][[input$firstVar]]), (datList[[as.character(input$currentDat)]][[input$secondVar]]))
           }
           else if (input$typeOfNewVar == "Integer") {
-            dat[[input$newVarName]] <- as.integer(as.numeric(dat[[input$firstVar]]) + as.integer(dat[[input$secondVar]]))
+            dat[[input$newVarName]] <- as.integer(as.numeric(datList[[as.character(input$currentDat)]][[input$firstVar]]) + as.integer(datList[[as.character(input$currentDat)]][[input$secondVar]]))
           }
         }
       }
@@ -563,47 +588,47 @@ shinyServer(function(input, output) {
   }
   
   getData <- reactive({
-    dat <<- initialGetData()
     if (input$submitEdits == 0) {
-      return(dat)
+      datList[[as.character(input$currentDat)]] <<- initialGetData()
+      return(datList[[as.character(input$currentDat)]])
     }
     isolate({
       for (i in input$variableForEditing) {
         for (j in input$editOptions) {
           if (j == "Remove NAs") {
-            datList[[as.character(input$currentDat)]] <<- dat[!is.na(dat[toString(i)]),]
+            datList[[as.character(input$currentDat)]] <<- datList[[as.character(input$currentDat)]][!is.na(datList[[as.character(input$currentDat)]][,as.character(i)]),]
           }
           else if (j == "Center Variable") {
-            datList[[as.character(input$currentDat)]][[toString(i)]] <<- dat[[toString(i)]] - mean(dat[[toString(i)]], na.rm = T)
+            datList[[as.character(input$currentDat)]][,as.character(i)] <<- datList[[as.character(input$currentDat)]][,as.character(i)] - mean(datList[[as.character(input$currentDat)]][,as.character(i)], na.rm = T)
           }
           else if (j == "Scale Variable") {
-            datList[[as.character(input$currentDat)]][[toString(i)]] <<- dat[[toString(i)]]/sd(dat[[toString(i)]], na.rm = T)
+            datList[[as.character(input$currentDat)]][,as.character(i)] <<- datList[[as.character(input$currentDat)]][,as.character(i)]/sd(datList[[as.character(input$currentDat)]][,as.character(i)], na.rm = T)
           }
           else if (j == "Convert Variable Type") {
             if (input$convertVarTo == "Character") {
-              datList[[as.character(input$currentDat)]][[as.character(i)]] <<- as.character(dat[[as.character(i)]])
+              datList[[as.character(input$currentDat)]][,as.character(i)] <<- as.character(datList[[as.character(input$currentDat)]][,as.character(i)])
             }
             else if (input$convertVarTo == "Integer") {
-              datList[[as.character(input$currentDat)]][[as.character(i)]] <<- as.integer(dat[[as.character(i)]])
+              datList[[as.character(input$currentDat)]][,as.character(i)] <<- as.integer(datList[[as.character(input$currentDat)]])
             }
             else if (input$convertVarTo == "Numeric") {
-              datList[[as.character(input$currentDat)]][[as.character(i)]] <<- as.numeric(dat[[as.character(i)]])
+              datList[[as.character(input$currentDat)]][,as.character(i)] <<- as.numeric(datList[[as.character(input$currentDat)]][,as.character(i)])
             }
             else if (input$convertVarTo == "Factor") {
-              datList[[as.character(input$currentDat)]][[as.character(i)]] <<- as.factor(dat[[as.character(i)]])
+              datList[[as.character(input$currentDat)]][,as.character(i)] <<- as.factor(datList[[as.character(input$currentDat)]][,as.character(i)])
             }
           }
           else if (j == "Change to Lowercase") {
-            if (typeof(dat[[toString(i)]][1]) == "character") {
-              datList[[as.character(input$currentDat)]][[toString(i)]] <<- tolower(dat[[toString(i)]])
+            if (typeof(dat[,as.character(i)][1]) == "character") {
+              datList[[as.character(input$currentDat)]][,as.character(i)] <<- tolower(datList[[as.character(input$currentDat)]][,as.character(i)])
             }
             else {
               #Do nothing
             }
           }
           else if (j == "Change to Uppercase") {
-            if (typeof(dat[[toString(i)]][1]) == "character") {
-              datList[[as.character(input$currentDat)]][[toString(i)]] <<- toupper(dat[[toString(i)]])
+            if (typeof(dat[,as.character(i)][1]) == "character") {
+              datList[[as.character(input$currentDat)]][,as.character(i)] <<- toupper(datList[[as.character(input$currentDat)]][,as.character(i)])
             }
             else {
               #Do nothing
@@ -612,104 +637,104 @@ shinyServer(function(input, output) {
           else if (j == "Make an Imputation") {
             if (input$whatToChange == "NA") {
               if (input$selectizeAdvancedImputation == "Impute the mean") {
-                datList[[as.character(input$currentDat)]][[as.character(i)]][is.na(dat[[as.character(i)]])] <<- mean(dat[[as.character(i)]], na.rm = T)
+                datList[[as.character(input$currentDat)]][,as.character(i)][is.na(datList[[as.character(input$currentDat)]][,as.character(i)])] <<- mean(datList[[as.character(input$currentDat)]][,as.character(i)], na.rm = T)
               }
               else if (input$selectizeAdvancedImputation == "Impute the median") {
-                datList[[as.character(input$currentDat)]][[as.character(i)]][is.na(dat[[as.character(i)]])] <<- median(dat[[as.character(i)]], na.rm = T)
+                datList[[as.character(input$currentDat)]][,as.character(i)][is.na(datList[[as.character(input$currentDat)]][,as.character(i)])] <<- median(datList[[as.character(input$currentDat)]][,as.character(i)], na.rm = T)
               }
               else if (input$fromType == "Numeric") {
-                datList[[as.character(input$currentDat)]][[as.character(i)]][is.na(dat[[as.character(i)]])] <<- as.numeric(input$changeTo)
+                datList[[as.character(input$currentDat)]][,as.character(i)][is.na(datList[[as.character(input$currentDat)]][,as.character(i)])] <<- as.numeric(input$changeTo)
               }
               else if (input$fromType == "Character") {
-                datList[[as.character(input$currentDat)]][[as.character(i)]][is.na(dat[[as.character(i)]])] <<- as.character(input$changeTo)
+                datList[[as.character(input$currentDat)]][,as.character(i)][is.na(datList[[as.character(input$currentDat)]][,as.character(i)])] <<- as.character(input$changeTo)
               }
               else if (input$fromType == "Integer") {
-                datList[[as.character(input$currentDat)]][[as.character(i)]][is.na(dat[[as.character(i)]])] <<- as.integer(input$changeTo)
+                datList[[as.character(input$currentDat)]][,as.character(i)][is.na(datList[[as.character(input$currentDat)]][,as.character(i)])] <<- as.integer(input$changeTo)
               }
             }
             else if (input$selectizeAdvancedImputation == "Impute the mean") {
-              datList[[as.character(input$currentDat)]][[as.character(i)]][dat[[as.character(i)]] == as.integer(input$whatToChange)] <<- mean(dat[[as.character(i)]], na.rm = T)
+              datList[[as.character(input$currentDat)]][,as.character(i)][datList[[as.character(input$currentDat)]][,as.character(i)] == as.integer(input$whatToChange)] <<- mean(datList[[as.character(input$currentDat)]], na.rm = T)
             }
             else if (input$selectizeAdvancedImputation == "Impute the median") {
-              datList[[as.character(input$currentDat)]][[as.character(i)]][dat[[as.character(i)]] == as.integer(input$whatToChange)] <<- median(dat[[as.character(i)]], na.rm = T)
+              datList[[as.character(input$currentDat)]][,as.character(i)][datList[[as.character(input$currentDat)]][,as.character(i)] == as.integer(input$whatToChange)] <<- median(datList[[as.character(input$currentDat)]], na.rm = T)
             }
             else if (input$fromType == "Numeric") {
-              datList[[as.character(input$currentDat)]][[as.character(i)]][dat[[as.character(i)]] == as.numeric(input$whatToChange)] <<- as.numeric(input$changeTo)
+              datList[[as.character(input$currentDat)]][,as.character(i)][datList[[as.character(input$currentDat)]][,as.character(i)] == as.numeric(input$whatToChange)] <<- as.numeric(input$changeTo)
             }
             else if (input$fromType == "Character") {
-              datList[[as.character(input$currentDat)]][[as.character(i)]][dat[[as.character(i)]] == as.character(input$whatToChange)] <<- as.character(input$changeTo)
+              datList[[as.character(input$currentDat)]][,as.character(i)][datList[[as.character(input$currentDat)]][,as.character(i)] == as.character(input$whatToChange)] <<- as.character(input$changeTo)
             }
             else if (input$fromType == "Integer") {
-              dat[[as.character(i)]][dat[[as.character(i)]] == as.integer(input$whatToChange)] <<- as.integer(input$changeTo)
+              datList[[as.character(input$currentDat)]][datList[[as.character(input$currentDat)]][,as.character(i)] == as.integer(input$whatToChange)] <<- as.integer(input$changeTo)
             }
           }
           else if (j == "Subset Data") {
             if (input$howToSubset == "Equal to") {
               if (input$varType == "Character") {
-                datList[[as.character(input$currentDat)]] <<- subset(dat, dat[[as.character(i)]] == as.character(input$valueToSubsetOn))
+                datList[[as.character(input$currentDat)]] <<- subset(dat, datList[[as.character(input$currentDat)]][,as.character(i)] == as.character(input$valueToSubsetOn))
               }
               else if (input$varType == "Numeric") {
-                datList[[as.character(input$currentDat)]] <<- subset(dat, dat[[as.character(i)]] == as.numeric(input$valueToSubsetOn))
+                datList[[as.character(input$currentDat)]] <<- subset(dat, datList[[as.character(input$currentDat)]][,as.character(i)] == as.numeric(input$valueToSubsetOn))
               }
               else if (input$varType == "Integer") {
-                datList[[as.character(input$currentDat)]] <<- subset(dat, dat[[as.character(i)]] == as.integer(input$valueToSubsetOn))
+                datList[[as.character(input$currentDat)]] <<- subset(dat, datList[[as.character(input$currentDat)]][,as.character(i)] == as.integer(input$valueToSubsetOn))
               }
             }
             else if (input$howToSubset == "Greater than") {
               if (input$varType == "Character") {
-                datList[[as.character(input$currentDat)]] <<- subset(dat, dat[[as.character(i)]] > as.character(input$valueToSubsetOn))
+                datList[[as.character(input$currentDat)]] <<- subset(dat, datList[[as.character(input$currentDat)]][,as.character(i)] > as.character(input$valueToSubsetOn))
               }
               else if (input$varType == "Numeric") {
-                datList[[as.character(input$currentDat)]] <<- subset(dat, dat[[as.character(i)]] > as.numeric(input$valueToSubsetOn))
+                datList[[as.character(input$currentDat)]] <<- subset(dat, datList[[as.character(input$currentDat)]][,as.character(i)] > as.numeric(input$valueToSubsetOn))
               }
               else if (input$varType == "Integer") {
-                datList[[as.character(input$currentDat)]] <<- subset(dat, dat[[as.character(i)]] > as.integer(input$valueToSubsetOn))
+                datList[[as.character(input$currentDat)]] <<- subset(dat, datList[[as.character(input$currentDat)]][,as.character(i)] > as.integer(input$valueToSubsetOn))
               }
             }
             else if (input$howToSubset == "Less than") {
               if (input$varType == "Character") {
-                datList[[as.character(input$currentDat)]] <<- subset(dat, dat[[as.character(i)]] < as.character(input$valueToSubsetOn))
+                datList[[as.character(input$currentDat)]] <<- subset(dat, datList[[as.character(input$currentDat)]][,as.character(i)] < as.character(input$valueToSubsetOn))
               }
               else if (input$varType == "Numeric") {
-                datList[[as.character(input$currentDat)]] <<- subset(dat, dat[[as.character(i)]] < as.numeric(input$valueToSubsetOn))
+                datList[[as.character(input$currentDat)]] <<- subset(dat, datList[[as.character(input$currentDat)]][,as.character(i)] < as.numeric(input$valueToSubsetOn))
               }
               else if (input$varType == "Integer") {
-                datList[[as.character(input$currentDat)]] <<- subset(dat, dat[[as.character(i)]] < as.integer(input$valueToSubsetOn))
+                datList[[as.character(input$currentDat)]] <<- subset(dat, datList[[as.character(input$currentDat)]][,as.character(i)] < as.integer(input$valueToSubsetOn))
               }
             }
             else if (input$howToSubset == "Between") {
               if (input$varType == "Character") {
-                datList[[as.character(input$currentDat)]] <<- subset(dat, dat[[as.character(i)]] < as.character(input$secondVal) & dat[[as.character(i)]] > as.character(input$firstVal))
+                datList[[as.character(input$currentDat)]] <<- subset(dat, datList[[as.character(input$currentDat)]][,as.character(i)] < as.character(input$secondVal) & datList[[as.character(input$currentDat)]][,as.character(i)] > as.character(input$firstVal))
               }
               else if (input$varType == "Numeric") {
-                datList[[as.character(input$currentDat)]] <<- subset(dat, dat[[as.character(i)]] < as.numeric(input$secondVal) & dat[[as.character(i)]] > as.numeric(input$firstVal))
+                datList[[as.character(input$currentDat)]] <<- subset(dat, datList[[as.character(input$currentDat)]][,as.character(i)] < as.numeric(input$secondVal) & datList[[as.character(input$currentDat)]][,as.character(i)] > as.numeric(input$firstVal))
               }
               else if (input$varType == "Integer") {
-                datList[[as.character(input$currentDat)]] <<- subset(dat, dat[[as.character(i)]] < as.integer(input$secondVal) & dat[[as.character(i)]] > as.integer(input$firstVal))
+                datList[[as.character(input$currentDat)]] <<- subset(dat, datList[[as.character(input$currentDat)]][,as.character(i)] < as.integer(input$secondVal) & datList[[as.character(input$currentDat)]][,as.character(i)] > as.integer(input$firstVal))
               }
             }
             else if (input$howToSubset == "Not equal to") {
               if (input$varType == "Character") {
-                datList[[as.character(input$currentDat)]] <<- subset(dat, dat[[as.character(i)]] != as.character(input$valueToSubsetOn))
+                datList[[as.character(input$currentDat)]] <<- subset(dat, datList[[as.character(input$currentDat)]][,as.character(i)] != as.character(input$valueToSubsetOn))
               }
               else if (input$varType == "Numeric") {
-                datList[[as.character(input$currentDat)]] <<- subset(dat, dat[[as.character(i)]] != as.numeric(input$valueToSubsetOn))
+                datList[[as.character(input$currentDat)]] <<- subset(dat, datList[[as.character(input$currentDat)]][,as.character(i)] != as.numeric(input$valueToSubsetOn))
               }
               else if (input$varType == "Integer") {
-                datList[[as.character(input$currentDat)]] <<- subset(dat, dat[[as.character(i)]] != as.integer(input$valueToSubsetOn))
+                datList[[as.character(input$currentDat)]] <<- subset(dat, datList[[as.character(input$currentDat)]][,as.character(i)] != as.integer(input$valueToSubsetOn))
               }
             }
           }
           else if (j == "Create a Variable") {
             if (input$howToCreate == "Add two variables") {
               if (input$typeOfNewVar == "Numeric") {
-                datList[[as.character(input$currentDat)]][[input$newVarName]] <<- as.numeric(dat[[input$firstVar]]) + as.numeric(dat[[input$secondVar]])
+                datList[[as.character(input$currentDat)]][[input$newVarName]] <<- as.numeric(datList[[as.character(input$currentDat)]][[input$firstVar]]) + as.numeric(datList[[as.character(input$currentDat)]][[input$secondVar]])
               }
               else if (input$typeOfNewVar == "Character") {
-                datList[[as.character(input$currentDat)]][[input$newVarName]] <<- paste0((dat[[input$firstVar]]), (dat[[input$secondVar]]))
+                datList[[as.character(input$currentDat)]][[input$newVarName]] <<- paste0((datList[[as.character(input$currentDat)]][[input$firstVar]]), (datList[[as.character(input$currentDat)]][[input$secondVar]]))
               }
               else if (input$typeOfNewVar == "Integer") {
-                datList[[as.character(input$currentDat)]][[input$newVarName]] <<- as.integer(as.numeric(dat[[input$firstVar]]) + as.integer(dat[[input$secondVar]]))
+                datList[[as.character(input$currentDat)]][[input$newVarName]] <<- as.integer(as.numeric(datList[[as.character(input$currentDat)]][[input$firstVar]]) + as.integer(datList[[as.character(input$currentDat)]][[input$secondVar]]))
               }
             }
           }
@@ -810,6 +835,7 @@ shinyServer(function(input, output) {
     }
   })
   output$changeXAxisLimit <- renderUI ({
+    dat <- datList[[as.character(input$currentDat)]]
     if ("Change X-axis limits" %in% input$graphOptions) {
       sliderInput("newXLimits", "New X-Axis Limits:", min = min(dat[[as.character(input$xAxisVar)]], na.rm = T),
                   max = max(dat[[as.character(input$xAxisVar)]], na.rm = T), value = c(min(dat[[as.character(input$xAxisVar)]], na.rm = T),
@@ -817,6 +843,7 @@ shinyServer(function(input, output) {
     }
   })
   output$changeYAxisLimit <- renderUI ({
+    dat <- datList[[as.character(input$currentDat)]]
     if ("Change Y-axis limits" %in% input$graphOptions) {
       sliderInput("newYLimits", "New Y-Axis Limits:", min = min(dat[[as.character(input$yAxisVar)]], na.rm = T),
                   max = max(dat[[as.character(input$yAxisVar)]], na.rm = T), value = c(min(dat[[as.character(input$yAxisVar)]], na.rm = T),
@@ -866,6 +893,7 @@ shinyServer(function(input, output) {
       return(NULL)
     }
     isolate ({
+      dat <- datList[[as.character(input$currentDat)]]
       if (input$yAxisVar == "None") {
         if (input$factorVar == "Yes") {
           dat[[as.character(input$xAxisVar)]] <- as.factor(dat[[as.character(input$xAxisVar)]])
@@ -1141,6 +1169,12 @@ shinyServer(function(input, output) {
     })
   })
   
+  #Validate plot is valid
+  testPlot <- reactive({
+    validate(
+      need(try(print(plotMaker())), "Sorry, this plot is either invalid or isn't currently supported.")
+    )
+  })
   
   #Plot printer:
   output$plotOut <- renderPlot ({
@@ -1187,10 +1221,251 @@ shinyServer(function(input, output) {
         selectizeInput("linRegPredictedVar", "Variable to Predict:",
                        choices = names(getData())),
         selectizeInput("linRegPredictorVar", "Variables to Use in Model:",
-                       choices = names(getData())))
+                       choices = names(getData()), multiple = T))
   })
   
+  createOutputLinReg <- reactive({
+    if (input$buildModelLinReg == 0) {
+      return(NULL)
+    }
+    isolate({
+      linRegModel <- lm(as.formula(paste0(input$linRegPredictedVar,"~", paste0(input$linRegPredictorVar, collapse = "+"))), data = getData())
+      return(summary(linRegModel))
+    })
+  })
   
+  output$linRegModelOutput <- renderPrint ({
+    print(createOutputLinReg())
+  })
+  
+  output$linReg2 <- renderUI ({
+    box(width = 12,
+        selectizeInput("linRegPredictedVar2", "Variable to Predict:",
+                       choices = names(getData())),
+        selectizeInput("linRegPredictorVars2", "All Variables for Consideration:",
+                       choices = names(getData()), multiple = T),
+        textInput("numPredVars", "Maximum Number of Variables to Include in Model:"))
+  })
+  
+  createOutputVarSelection <- reactive({
+    if (input$buildModelLinReg2 == 0){
+      return(NULL)
+    }
+    isolate({
+      lm.model <- lm(as.formula(paste0(input$linRegPredictedVar2,"~", paste0(input$linRegPredictorVars2, collapse = "+"))), data = getData())
+      graphicalShow <- regsubsets(as.formula(paste0(input$linRegPredictedVar2,"~", paste0(input$linRegPredictorVars2, collapse = "+"))), data = getData(), nvmax = as.numeric(input$numPredVars))
+      bestModel <- step(lm.model, direction = "backward")
+      return(list(graphicalShow, bestModel))
+    })
+  })
+  
+  output$varImporatance1  <- renderPlot ({
+    graphical <- createOutputVarSelection()[[1]]
+    print(plot(graphical, scale = "adjr2"))
+  })
+  
+  output$linRegVarSelection1 <- renderUI ({
+    bestModel <- createOutputVarSelection()[[2]]
+    if (names(bestModel$coefficients)[1] == "(Intercept)") {
+      int = bestModel$coefficients[1]
+      coeffs <- bestModel$coefficients[-1]
+    }
+    else {
+      coeffs <- bestModel$coefficients
+      int <- ""
+    }
+    box(width = 12,
+        h4("The best model to predict", input$linRegPredictedVar2 ,"from a subset of variables is:"),
+        h5(paste(int, paste(names(coeffs), "*", coeffs, collapse = "+"), sep = "+"))
+    )
+  })
+  
+  output$linReg3 <- renderUI ({
+    box(width = 12,
+        selectizeInput("linRegPredictedVar3", "Variable to Predict:",
+                       choices = names(getData())),
+        selectizeInput("linRegPredictorVars3", "All Variables to Consider for Interaction:",
+                       choices = names(getData()), multiple = T))
+  })
+  
+  createOutputVarInteraction <- reactive({
+    if (input$buildModelLinReg3 == 0) {
+      return(NULL)
+    }
+    isolate ({
+      lm.model <- lm(as.formula(paste0(input$linRegPredictedVar3,"~", paste0(input$linRegPredictorVars3, collapse = "+"))), data = getData())
+      bestModel <- step(lm.model, scope =  (~.^2))
+      graphicalShow <- regsubsets(bestModel$call$formula, data = getData())
+      return(list(graphicalShow, bestModel))
+    })
+  })
+  
+  output$varImporatance2  <- renderPlot ({
+    graphical <- createOutputVarInteraction()[[1]]
+    print(plot(graphical, scale = "adjr2"))
+  })
+  
+  output$linRegVarInteraction <- renderUI ({
+    bestModel <- createOutputVarInteraction()[[2]]
+    if (names(bestModel$coefficients)[1] == "(Intercept)") {
+      int = bestModel$coefficients[1]
+      coeffs <- bestModel$coefficients[-1]
+    }
+    else {
+      coeffs <- bestModel$coefficients
+      int <- ""
+    }
+    box(width = 12,
+        h4("The best model to predict", input$linRegPredictedVar3 ,"with variable interactions included is:"),
+        h5(paste(int, paste(names(coeffs), "*", coeffs, collapse = "+"), sep = "+"))
+    )
+  })
+  
+  #Logistic Regression Tab
+  output$logReg <- renderUI ({
+    box(width = 12,
+        selectizeInput("logRegPredictedVar", "Variable to Predict:",
+                       choices = names(getData())),
+        selectizeInput("logRegPredictorVar", "Variables to Use in Model:",
+                       choices = names(getData()), multiple = T))
+  })
+  
+  createOutputLogReg <- reactive({
+    if (input$buildModelLogReg == 0) {
+      return(NULL)
+    }
+    isolate({
+      logRegModel <- glm(as.formula(paste0(input$logRegPredictedVar,"~", paste0(input$logRegPredictorVar, collapse = "+"))), data = getData(), family=binomial)
+      return(summary(logRegModel))
+    })
+  })
+  
+  output$logRegModelOutput <- renderPrint ({
+    print(createOutputLogReg())
+  })
+  
+  #Kmeans tab
+  output$kmeansChoice <- renderUI ({
+    selectizeInput("kmeansChoiceMade", "Options for clustering:",
+                   choices = c("Choose number of clusters",
+                               "Find optimal number of clusters in a range"))
+  })
+  output$kmeans <- renderUI ({
+    if (input$kmeansChoiceMade == "Choose number of clusters") {
+      box(width = 12,
+          selectizeInput("kmeansVars", "Variables to Use in Cluster Analysis:",
+                         choices = names(getData()), multiple = T),
+          textInput("numClust", "Number of clusters:"),
+          helpText("Please be aware that this operation can take some time with high numbers of clusters"),
+          actionButton("cluster", "Cluster!")
+      )
+    }
+    else if (input$kmeansChoiceMade == "Find optimal number of clusters in a range"){
+      box(width = 12,
+          selectizeInput("kmeansVars", "Variables to Use in Cluster Analysis:",
+                         choices = names(getData()), multiple = T),
+          textInput("maxClust", "Maximum Number of Clusters:"),
+          helpText("Please be aware that this operation can take some time with high numbers of clusters"),
+          actionButton("cluster2", "Cluster!")
+      )
+    }
+  })
+  
+  output$kmeansOutput <- renderUI ({
+    ret <- performClustering()
+    box(width = 12, 
+        p(ret[[1]]),
+        p(ret[[2]]),
+        p(ret[[3]])
+    )
+  })
+  
+  performClustering <- reactive ({
+    if (input$cluster == 0 | input$cluster2 == 0) {
+      return(NULL)
+    }
+    isolate ({
+      if (input$kmeansChoiceMade == "Choose number of clusters") {
+        dat <- makeClusterData()
+        sigDat <- invisible(testClustering(dat, as.integer(input$numClust)))
+        if (sigDat[[1]] == "good") {
+          datList[[as.character(input$currentDat)]] <<- sigDat[[2]]
+          sent1 <- paste("Clustering was a success! The number of clusters used was", sigDat[[3]])
+          sent2 <- paste("The Jaccard similarity values for your clusters were:", paste(sigDat[[4]], collapse = ", "))
+          sent3 <- paste("These values indicate that these clusters appear to hold significance and can be used for analysis. The cluster values have been added to the dataset.")
+        }
+        else if (sigDat[[1]] == "ok") {
+          datList[[as.character(input$currentDat)]] <<- sigDat[[2]]
+          sent1 <- paste("Clustering went ok. The number of clusters used was", sigDat[[3]])
+          sent2 <- paste("The Jaccard similarity values for your clusters were:", paste(sigDat[[4]], collapse = ", "))
+          sent3 <- paste("These values indicate that these clusters show some information, but should be used with caution. The cluster values have been added to the dataset.")
+        }
+        else if (sigDat[[1]] == "bad") {
+          sent1 <- paste("Clustering went poorly. The number of clusters used was", sigDat[[3]])
+          sent2 <- paste("The Jaccard similarity values for your clusters were:", paste(sigDat[[4]], collapse = ", "))
+          sent3 <- paste("These values indicate that these clusters do not hold any significant information and should not be used for analysis. The cluster values have not been added to the dataset.")
+        }
+        return(list(sent1, sent2, sent3))
+      }
+      else if (input$kmeansChoiceMade == "Find optimal number of clusters in a range") {
+        dat <- makeClusterData()
+        numClust <- optimalCluster(dat, as.integer(input$maxClust))
+        sigDat <- invisible(testClustering(dat, as.integer(numClust)))
+        if (sigDat[[1]] == "good") {
+          datList[[as.character(input$currentDat)]] <<- sigDat[[2]]
+          sent1 <- paste("Clustering was a success! The number of clusters used was", sigDat[[3]])
+          sent2 <- paste("The Jaccard similarity values for your clusters were:", paste(sigDat[[4]], collapse = ", "))
+          sent3 <- paste("These values indicate that these clusters appear to hold significance and can be used for analysis. The cluster values have been added to the dataset.")
+        }
+        else if (sigDat[[1]] == "ok") {
+          datList[[as.character(input$currentDat)]] <<- sigDat[[2]]
+          sent1 <- paste("Clustering went ok. The number of clusters used was", sigDat[[3]])
+          sent2 <- paste("The Jaccard similarity values for your clusters were:", paste(sigDat[[4]], collapse = ", "))
+          sent3 <- paste("These values indicate that these clusters show some information, but should be used with caution. The cluster values have been added to the dataset.")
+        }
+        else if (sigDat[[1]] == "bad") {
+          sent1 <- paste("Clustering went poorly. The number of clusters used was", sigDat[[3]])
+          sent2 <- paste("The Jaccard similarity values for your clusters were:", paste(sigDat[[4]], collapse = ", "))
+          sent3 <- paste("These values indicate that these clusters do not hold any significant information and should not be used for analysis. The cluster values have not been added to the dataset.")
+        }
+        return(list(sent1, sent2, sent3))
+      }
+    })
+  })
+  
+  makeClusterData <- reactive ({
+    dat <- getData()
+    retDat <- subset(dat, select = c(input$kmeansVars))
+    retDat <- na.omit(retDat)
+    return(retDat)
+  })
+  
+  optimalCluster <- function(dataset, maxClust) {
+    #Run kmeansruns with max cluster arg and find best cluster
+    kMeansRunsOut = kmeansruns(dataset, krange = 2:as.integer(maxClust))
+    bestClust = kMeansRunsOut$bestk
+    return(bestClust)
+  }
+  
+  testClustering <- function(dataset, numClust) {
+    #With best cluster, run bootcluster()
+    km.boot <- invisible(clusterboot(dataset, B=100, bootmethod = "boot", clustermethod = kmeansCBI,
+                           krange = numClust, seed = 15555))
+    #Check if every cluster has at least a .75 bootmean or at least .6
+    if (all(km.boot$bootmean > .75)) {
+      dataset$cluster <- km.boot$partition
+      signal <- "good"
+    } 
+    else if (all(km.boot$bootmean > .6)) {
+      dataset$cluster <- km.boot$partition
+      signal <- "ok"
+    } 
+    else {
+      signal <- "bad"
+    }
+    retList <- list(signal, dataset, numClust, km.boot$bootmean)
+    return(retList)
+  }
   
   ########
   #Download tab code
