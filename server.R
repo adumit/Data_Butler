@@ -1,5 +1,5 @@
-#Data Butler by Andrew Dumit is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License.
-#Based on a work at https://github.com/adumit/Data_Butler.
+# Data Butler by Andrew Dumit is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License.
+# Based on a work at https://github.com/adumit/Data_Butler.
 
 library(shiny)
 library(stringr)
@@ -45,6 +45,10 @@ shinyServer(function(input, output) {
       datList <<- newList
       return(datList)
     })
+  })
+  
+  output$done <- renderUI ({
+    h5("Done!")
   })
   
   assignNewDatOldFile <- reactive({
@@ -306,6 +310,32 @@ shinyServer(function(input, output) {
   })
   output$summaryStats3 <- renderPrint({
     createSummaryStats3()
+  })
+  
+  #Advanced examination tab
+  output$tableVarSelectize <- renderUI ({
+    div(
+      selectizeInput('varForTable', 'Variables for Tables:',
+                     choices = names(getData()), multiple=T),
+      actionButton("makeTable", "Create Table")
+    )
+  })
+  
+  makeTable <- reactive({
+    if (input$makeTable == 0) {
+      return(NULL)
+    }
+    isolate({
+      tableList <- list()
+      for (i in input$varForTable) {
+        tableList[[as.character(i)]] <- getData()[[as.character(i)]]
+      }
+      return(table(tableList))
+    })
+  })
+  
+  output$tableViewer <- renderPrint({
+    makeTable()
   })
   
   ###########

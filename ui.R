@@ -1,5 +1,5 @@
-#Data Butler by Andrew Dumit is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License.
-#Based on a work at https://github.com/adumit/Data_Butler.
+# Data Butler by Andrew Dumit is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License.
+# Based on a work at https://github.com/adumit/Data_Butler.
 
 library(shiny)
 library(shinydashboard)
@@ -38,7 +38,7 @@ dashboardPage(
                 column(width=4,
                        box(
                          width = 12,
-                         title = "Upload Your Data",
+                         h4("First, Upload Your Data:"),
                          radioButtons("typeUpload", "Type of Upload File:",
                                       choices = c("CSV", "RData File"), inline=T),
                          fileInput('file1', 'Choose File',
@@ -46,8 +46,17 @@ dashboardPage(
                                             'text/comma-separated-values,text/plain', 
                                             '.csv',
                                             '.rda')),
+                         h4("Then, name your dataset and finish the upload:"),
                          textInput("dataName", "Name of Dataset:"),
-                         actionButton("finalizeUpload", "Upload File"),
+                         fluidRow(
+                           column(width = 6,
+                                  actionButton("finalizeUpload", "Finish Upload", class="finUpload")),
+                           column(width = 6,
+                                  div(id = "doneMessage",
+                                      #style = "visibility: hidden",
+                                    uiOutput("done")
+                                  ))
+                         ),
                          tags$hr(),
                          uiOutput("csvType")
                        )),
@@ -141,23 +150,18 @@ dashboardPage(
                                 )
                          ),
                        tabPanel("Advanced Examination",
-                                fluidRow(
-                                  column(width=3,
-                                         box(width=12,
-                                             uiOutput("selectizeAdvExam")
-                                         )),
-                                  column(width=9,
-                                         box(width=12,
-                                             column(width=4,
-                                                    verbatimTextOutput("advExam1")),
-                                             column(width=4,
-                                                    verbatimTextOutput("advExam2")),
-                                             column(width=4,
-                                                    verbatimTextOutput("advExam3"))
-                                         )
-                                  )
-                                ))
+                                tabBox(width = 12,
+                                  tabPanel("Table Viewer",
+                                           width = 12,
+                                           fluidRow(
+                                             column(width = 3,
+                                                    uiOutput("tableVarSelectize")),
+                                             column(width = 9,
+                                                    verbatimTextOutput("tableViewer"))
+                                           ))
+                                )
                        )
+                    )
               )        
       ),
       tabItem(tabName = "dataEditor",
