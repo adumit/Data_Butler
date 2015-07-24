@@ -8,6 +8,7 @@ library(plyr)
 library(fpc)
 library(leaps)
 options(shiny.maxRequestSize=300*1024^2)
+source("Modules/linearRegressionTab.R", local = T)
 
 shinyServer(function(input, output) {
   dataEdited <<- FALSE
@@ -1248,111 +1249,8 @@ shinyServer(function(input, output) {
   #Model builder tab
   ########
   
-  #Linear Regression Tab
-  output$linReg <- renderUI ({
-    box(width = 12,
-        selectizeInput("linRegPredictedVar", "Variable to Predict:",
-                       choices = names(getData())),
-        selectizeInput("linRegPredictorVar", "Variables to Use in Model:",
-                       choices = names(getData()), multiple = T))
-  })
-  
-  createOutputLinReg <- reactive({
-    if (input$buildModelLinReg == 0) {
-      return(NULL)
-    }
-    isolate({
-      linRegModel <- lm(as.formula(paste0(input$linRegPredictedVar,"~", paste0(input$linRegPredictorVar, collapse = "+"))), data = getData())
-      return(summary(linRegModel))
-    })
-  })
-  
-  output$linRegModelOutput <- renderPrint ({
-    print(createOutputLinReg())
-  })
-  
-  output$linReg2 <- renderUI ({
-    box(width = 12,
-        selectizeInput("linRegPredictedVar2", "Variable to Predict:",
-                       choices = names(getData())),
-        selectizeInput("linRegPredictorVars2", "All Variables for Consideration:",
-                       choices = names(getData()), multiple = T),
-        textInput("numPredVars", "Maximum Number of Variables to Include in Model:"))
-  })
-  
-  createOutputVarSelection <- reactive({
-    if (input$buildModelLinReg2 == 0){
-      return(NULL)
-    }
-    isolate({
-      lm.model <- lm(as.formula(paste0(input$linRegPredictedVar2,"~", paste0(input$linRegPredictorVars2, collapse = "+"))), data = getData())
-      graphicalShow <- regsubsets(as.formula(paste0(input$linRegPredictedVar2,"~", paste0(input$linRegPredictorVars2, collapse = "+"))), data = getData(), nvmax = as.numeric(input$numPredVars))
-      bestModel <- step(lm.model, direction = "backward")
-      return(list(graphicalShow, bestModel))
-    })
-  })
-  
-  output$varImporatance1  <- renderPlot ({
-    graphical <- createOutputVarSelection()[[1]]
-    print(plot(graphical, scale = "adjr2"))
-  })
-  
-  output$linRegVarSelection1 <- renderUI ({
-    bestModel <- createOutputVarSelection()[[2]]
-    if (names(bestModel$coefficients)[1] == "(Intercept)") {
-      int = bestModel$coefficients[1]
-      coeffs <- bestModel$coefficients[-1]
-    }
-    else {
-      coeffs <- bestModel$coefficients
-      int <- ""
-    }
-    box(width = 12,
-        h4("The best model to predict", input$linRegPredictedVar2 ,"from a subset of variables is:"),
-        h5(paste(int, paste(names(coeffs), "*", coeffs, collapse = "+"), sep = "+"))
-    )
-  })
-  
-  output$linReg3 <- renderUI ({
-    box(width = 12,
-        selectizeInput("linRegPredictedVar3", "Variable to Predict:",
-                       choices = names(getData())),
-        selectizeInput("linRegPredictorVars3", "All Variables to Consider for Interaction:",
-                       choices = names(getData()), multiple = T))
-  })
-  
-  createOutputVarInteraction <- reactive({
-    if (input$buildModelLinReg3 == 0) {
-      return(NULL)
-    }
-    isolate ({
-      lm.model <- lm(as.formula(paste0(input$linRegPredictedVar3,"~", paste0(input$linRegPredictorVars3, collapse = "+"))), data = getData())
-      bestModel <- step(lm.model, scope =  (~.^2))
-      graphicalShow <- regsubsets(bestModel$call$formula, data = getData())
-      return(list(graphicalShow, bestModel))
-    })
-  })
-  
-  output$varImporatance2  <- renderPlot ({
-    graphical <- createOutputVarInteraction()[[1]]
-    print(plot(graphical, scale = "adjr2"))
-  })
-  
-  output$linRegVarInteraction <- renderUI ({
-    bestModel <- createOutputVarInteraction()[[2]]
-    if (names(bestModel$coefficients)[1] == "(Intercept)") {
-      int = bestModel$coefficients[1]
-      coeffs <- bestModel$coefficients[-1]
-    }
-    else {
-      coeffs <- bestModel$coefficients
-      int <- ""
-    }
-    box(width = 12,
-        h4("The best model to predict", input$linRegPredictedVar3 ,"with variable interactions included is:"),
-        h5(paste(int, paste(names(coeffs), "*", coeffs, collapse = "+"), sep = "+"))
-    )
-  })
+  eval(parse(text = linearRegressionTabUI))
+  eval(parse(text = linearRegressionTabServer))
   
   #Logistic Regression Tab
   output$logReg <- renderUI ({

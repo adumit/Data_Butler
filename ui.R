@@ -158,7 +158,8 @@ dashboardPage(
                                                     uiOutput("tableVarSelectize")),
                                              column(width = 9,
                                                     verbatimTextOutput("tableViewer"))
-                                           ))
+                                           )),
+                                  tabPanel("Summary Statistics by Group")
                                 )
                        )
                     )
@@ -296,43 +297,8 @@ dashboardPage(
               fluidRow(
                 tabBox(width = 12,
                        tabPanel("Linear Regression",
-                                 fluidRow(
-                                   tabBox(width = 12,
-                                     tabPanel("Build Your Model",
-                                              fluidRow(
-                                                column(width = 4,
-                                                       uiOutput("linReg"),
-                                                       actionButton("buildModelLinReg", "Build Model")),
-                                                column(width = 8,
-                                                       verbatimTextOutput("linRegModelOutput")
-                                                )
-                                              )
-                                     ),
-                                     tabPanel("Auto-Select Variables",
-                                              fluidRow(
-                                                column(width = 4,
-                                                       uiOutput("linReg2"),
-                                                       actionButton("buildModelLinReg2", "Select Variable Subset")),
-                                                column(width = 8,
-                                                       plotOutput("varImporatance1"),
-                                                       uiOutput("linRegVarSelection1")
-                                                )
-                                              )
-                                      ),
-                                     tabPanel("Test for Variable Interaction",
-                                              fluidRow(
-                                                column(width = 4,
-                                                       uiOutput("linReg3"),
-                                                       actionButton("buildModelLinReg3", "Test Variable Interaction")),
-                                                column(width = 8,
-                                                       plotOutput("varImporatance2"),
-                                                       uiOutput("linRegVarInteraction")
-                                                )
-                                              )
-                                      )
-                                   )
-                                 )
-                                ),
+                                uiOutput("linRegTabUI")
+                        ),
                        tabPanel("Logistic Regression",
                                 fluidRow(
                                   box(width=12,
@@ -368,12 +334,13 @@ dashboardPage(
               fluidRow(
                 column(width=4,
                        box(width=12,
-                           title="Download Your Data:",
+                           title="Download Your Data as a CSV File:",
                            textInput("fileName", "Enter the name for the downloaded file:"),
                            downloadButton('downloadData', 'Download')
                        )),
-                column(width = 8)
-              ))
+                column(width=8)
+              )
+      )
     )
   )
 )
