@@ -375,11 +375,11 @@ shinyServer(function(input, output) {
   })
   
   uniqueVals <- reactive({
-    if (length(unique(dat[[as.character(input$variableForEditing)]])) < 1000) {
-      return(as.character(unique(dat[[as.character(input$variableForEditing)]])))
+    if (length(unique(getData()[[as.character(input$variableForEditing)]])) < 1000) {
+      return(as.character(unique(getData()[[as.character(input$variableForEditing)]])))
     }
     else {
-      return(as.character(unique(dat[[as.character(input$variableForEditing)]]))[1:1000])
+      return(as.character(unique(getData()[[as.character(input$variableForEditing)]]))[1:1000])
     }
   })
   
